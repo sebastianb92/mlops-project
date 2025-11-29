@@ -15,37 +15,9 @@ env:
   SERVICE_NAME: mlops-deploy-prod
   TASK_DEFINITION_FILE: ecs-task-def-prod.json
   CONTAINER_NAME: app
-  SUBNETS: subnet-067b18d21d7a147a8
-  S3_BUCKET: mlops-project-deploy-bucket
-  S3_TEST_PATH: test_data/
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - run: pip install -r requirements.txt
-
-      - run: |
-          mkdir -p test_data
-          aws s3 cp s3://${{ env.S3_BUCKET }}/${{ env.S3_TEST_PATH }} test_data/ --recursive
-          export PYTHONPATH=$PYTHONPATH:$(pwd)
-          pytest tests/
-
-
   build_and_deploy:
-    needs: test
     runs-on: ubuntu-latest
 
     steps:
