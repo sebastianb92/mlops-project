@@ -1,9 +1,10 @@
-name: CI/CD - DEV
+name: CI/CD Pipeline - DEVELOPMENT
 
 on:
   push:
     branches:
       - dev
+  workflow_dispatch:
 
 env:
   AWS_REGION: us-east-1
@@ -29,6 +30,9 @@ jobs:
 
       - name: Instalar Dependencias
         run: pip install -r requirements.txt
+
+      - name: Preparar Modelo y Datos de Prueba
+        run: echo "Simulación de preparación de modelo y datos"
 
       - name: Ejecutar Pruebas Unitarias
         run: |
@@ -62,16 +66,11 @@ jobs:
 
       - name: Crear o Actualizar ECS Service
         run: |
-          # Obtener el estado del servicio
           SERVICE_EXISTS=$(aws ecs describe-services \
             --cluster ${{ env.CLUSTER_NAME }} \
             --services ${{ env.SERVICE_NAME }} \
-            --query "services[0].status" \
-            --output text)
+            --query 'services[0].status' --output text)
 
-          echo "SERVICE_EXISTS=$SERVICE_EXISTS"
-
-          # Actualizar o crear el servicio
           if [ "$SERVICE_EXISTS" = "ACTIVE" ]; then
             aws ecs update-service \
               --cluster ${{ env.CLUSTER_NAME }} \
