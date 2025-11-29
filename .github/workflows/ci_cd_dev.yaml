@@ -45,8 +45,22 @@ jobs:
           docker build . -t $DOCKER_IMAGE_TAG
           docker push $DOCKER_IMAGE_TAG
       - run: |
-          SERVICE_EXISTS=$(aws ecs describe-services --cluster ${{ env.CLUSTER_NAME }} --services ${{ env.SERVICE_NAME }} --query 'services[0].status' --output text)
+          SERVICE_EXISTS=$(aws ecs describe-services \
+            --cluster ${{ env.CLUSTER_NAME }} \
+            --services ${{ env.SERVICE_NAME }} \
+            --query "services[0].status" \
+            --output text)
+          echo "SERVICE_EXISTS=$SERVICE_EXISTS"
           if [ "$SERVICE_EXISTS" = "ACTIVE" ]; then
-            aws ecs update-service --cluster ${{ env.CLUSTER_NAME }} --service ${{ env.SERVICE_NAME }} --force-new-deployment
+            aws ecs update-service \
+              --cluster ${{ env.CLUSTER_NAME }} \
+              --service ${{ env.SERVICE_NAME }} \
+              --force-new-deployment
           else
-            aws ecs create-service --cluster ${{ env.CLUSTER_NAME }} --service-name ${{ env.SERVICE_NAME }} --task-definition ${{ env.TASK_DEFINITION }} --launch-type EC2 --desired-count 1 --network-configuration "awsvpcConfiguration={subnets=[${{ env.SUBNETS }}],assignPublicIp=ENABLED}"
+            aws ecs create-service \
+              --cluster ${{ env.CLUSTER_NAME }} \
+              --service-name ${{ env.SERVICE_NAME }} \
+              --task-definition ${{ env.TASK_DEFINITION }} \
+              --launch-type EC2 \
+              --desired-count 1 \
+              --network-configuration "awsvpcConfiguration={subnets=[${{ env.SUBNETS }}],assignPublicIp=ENABLED}"
