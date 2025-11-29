@@ -1,23 +1,23 @@
-# 1. Usar una imagen base de Python oficial (ligera)
+# 1. Imagen base ligera
 FROM python:3.10-slim
 
-# 2. Establecer el directorio de trabajo dentro del contenedor
+# 2. Directorio de trabajo
 WORKDIR /app
 
-# 3. Copiar solo los requisitos
+# 3. Copiar requirements
 COPY requirements.txt .
 
-# 4. Instalar las dependencias de Python
+# 4. Instalar dependencias + gunicorn
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install gunicorn boto3 onnxruntime pillow flask
 
-# 5. Copiar el resto de la aplicación y las plantillas
+# 5. Copiar aplicación
 COPY app/ app/
 COPY templates/ templates/
-COPY imagenet_classes.txt .
 
-# 6. Exponer el puerto de la aplicación
+# 6. Exponer puerto
 EXPOSE 8080
 
-# 7. Comando para ejecutar la aplicación
-ENV ENVIRONMENT=local
-CMD ["python", "app/app.py"]
+# 7. Comando para producción usando gunicorn
+ENV ENVIRONMENT=dev
+CMD ["gunicorn", "-b", "0.0.0.0:8080", "app:app"]

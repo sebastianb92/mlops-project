@@ -6,66 +6,46 @@ from flask import Flask, request, jsonify, render_template
 import onnxruntime
 import boto3
 
-# -------------------------
-# Configuración desde entorno
-# -------------------------
-S3_BUCKET = os.getenv("S3_BUCKET", "mlops-project-bucket")
-S3_MODEL_KEY = os.getenv("S3_MODEL_PATH", "models/mobilenetv2-7.onnx")
-AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-ENVIRONMENT = os.getenv("ENVIRONMENT", "dev")
+# --- CONFIGURACIÓN DESDE VARIABLES DE ENTORNO ---
+S3_BUCKET = os.getenv("S3_BUCKET")
+S3_MODEL_KEY = os.getenv("S3_MODEL_PATH")
+S3_LABELS_KEY = os.getenv("S3_LABELS_PATH", "imagenet_classes.txt")  # opcional
 
-LOCAL_MODEL_DIR = "app"
-MODEL_FILENAME = os.path.basename(S3_MODEL_KEY)
-MODEL_PATH = os.path.join(LOCAL_MODEL_DIR, MODEL_FILENAME)
-LABELS_FILENAME = "imagenet_classes.txt"
-LABELS_PATH = os.path.join(LOCAL_MODEL_DIR, LABELS_FILENAME)
+MODEL_PATH = "app/mobilenetv2-7.onnx"
+LABELS_PATH = "app/imagenet_classes.txt"
 
-INPUT_SIZE = (224, 224)
-
-# -------------------------
-# Funciones de descarga desde S3
-# -------------------------
-def download_from_s3(bucket: str, key: str, local_path: str):
+# --- FUNCIONES DE DESCARGA DESDE S3 ---
+def download_file_if_missing(bucket: str, key: str, local_path: str):
+    if os.path.exists(local_path):
+        return
     os.makedirs(os.path.dirname(local_path), exist_ok=True)
-    s3 = boto3.client("s3", region_name=AWS_REGION)
+    s3 = boto3.client("s3")
     try:
         s3.download_file(bucket, key, local_path)
-        print(f"Archivo descargado: s3://{bucket}/{key}")
+        print(f"Modelo descargado desde S3: s3://{bucket}/{key}")
     except Exception as e:
-        raise RuntimeError(f"Error descargando {key} desde S3: {e}")
+        print(f"Error descargando desde S3: {e}")
+        raise
 
-# Descargar modelo si no existe
-if not os.path.exists(MODEL_PATH):
-    download_from_s3(S3_BUCKET, S3_MODEL_KEY, MODEL_PATH)
+# Descargar modelo y clases si no existen
+download_file_if_missing(S3_BUCKET, S3_MODEL_KEY, MODEL_PATH)
+download_file_if_missing(S3_BUCKET, S3_LABELS_KEY, LABELS_PATH)
 
-# Descargar etiquetas desde S3 si no existen
-S3_LABELS_KEY = os.path.join(os.path.dirname(S3_MODEL_KEY), LABELS_FILENAME)
-if not os.path.exists(LABELS_PATH):
-    download_from_s3(S3_BUCKET, S3_LABELS_KEY, LABELS_PATH)
-
-# -------------------------
-# Cargar etiquetas
-# -------------------------
+# --- CARGAR ETIQUETAS ---
+LABELS = []
 try:
-    with open(LABELS_PATH, 'r') as f:
-        LABELS = [line.strip() for line in f]
-except FileNotFoundError:
-    LABELS = []
-    print("Archivo de etiquetas no encontrado.")
-
-# -------------------------
-# Cargar modelo ONNX
-# -------------------------
-try:
-    ort_session = onnxruntime.InferenceSession(MODEL_PATH)
-    input_name = ort_session.get_inputs()[0].name
+    with open(LABELS_PATH, "r") as f:
+        LABELS = [line.strip() for line in f.readlines()]
 except Exception as e:
-    raise RuntimeError(f"No se pudo cargar el modelo ONNX: {e}")
+    print(f"No se pudo cargar archivo de clases: {e}")
 
-# -------------------------
-# Flask App
-# -------------------------
+# --- CARGAR MODELO ONNX ---
+ort_session = onnxruntime.InferenceSession(MODEL_PATH)
+input_name = ort_session.get_inputs()[0].name
+
+# --- FLASK ---
 app = Flask(__name__)
+INPUT_SIZE = (224, 224)
 
 def preprocess(img_bytes):
     img = Image.open(io.BytesIO(img_bytes))
@@ -80,18 +60,21 @@ def index():
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    file = request.files.get("file")
-    if file is None:
-        return jsonify({"error": "No se subió ningún archivo"}), 400
+    if "file" not in request.files:
+        return jsonify({"error": "No file part"}), 400
 
-    try:
-        tensor = preprocess(file.read())
-        output = ort_session.run(None, {input_name: tensor})[0]
-        idx = int(np.argmax(output))
-        label = LABELS[idx] if LABELS and idx < len(LABELS) else "unknown"
-        return jsonify({"predicted_label": label, "index": idx})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"error": "No selected file"}), 400
+
+    tensor = preprocess(file.read())
+    output = ort_session.run(None, {input_name: tensor})[0]
+
+    idx = int(np.argmax(output))
+    label = LABELS[idx] if LABELS else "unknown"
+
+    return jsonify({"predicted_label": label, "index": idx})
 
 if __name__ == "__main__":
+    # Solo para debug local
     app.run(host="0.0.0.0", port=8080)
