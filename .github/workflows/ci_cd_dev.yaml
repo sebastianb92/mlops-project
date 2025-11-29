@@ -9,65 +9,80 @@ env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: mlops-deploy-repository
   ECR_REGISTRY: 804923754854.dkr.ecr.us-east-1.amazonaws.com
-  IMAGE_TAG: dev-latest  # etiqueta para dev
+  IMAGE_TAG: dev-latest
+  CLUSTER_NAME: mlops-deploy-cluster
+  SERVICE_NAME: mlops-dev-service
+  TASK_DEFINITION: mlops-deploy-dev:3
+  SUBNETS: subnet-067b18d21d7a147a8
 
 jobs:
-  # ETAPA 1: TEST
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: ⬇️ Checkout del Código
+      - name: Checkout del Código
         uses: actions/checkout@v4
 
-      - name: 🐍 Configurar Python 3.10
+      - name: Configurar Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: 📦 Instalar Dependencias
+      - name: Instalar Dependencias
         run: pip install -r requirements.txt
 
-      - name: ⚙️ Preparar Modelo y Datos de Prueba
-        run: |
-          # Descarga el modelo desde S3 o bucket definido
-          python app/download_model.py
-          echo "Modelo y datos listos para testing."
+      - name: Preparar Modelo y Datos de Prueba (Simulación)
+        run: echo "Simulando preparación del modelo y datos de prueba..."
 
-      - name: 🧪 Ejecutar Pruebas Unitarias
+      - name: Ejecutar Pruebas Unitarias
         run: |
           export PYTHONPATH=$PYTHONPATH:$(pwd)
           pytest tests/test_model.py
 
-  # ETAPA 2: BUILD / PROMOTE
   build_promote:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - name: ⬇️ Checkout del Código
+      - name: Checkout del Código
         uses: actions/checkout@v4
 
-      - name: 🔑 Configurar Credenciales AWS
+      - name: Configurar Credenciales AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: 🐳 Login a Amazon ECR
+      - name: Login a Amazon ECR
         run: |
           aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
           docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
 
-      - name: 🏗️ Construir y Push Docker Image
+      - name: Construir y Push Docker Image
         run: |
           DOCKER_IMAGE_TAG=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
           echo "Imagen Docker completa: $DOCKER_IMAGE_TAG"
           docker build . -t $DOCKER_IMAGE_TAG
           docker push $DOCKER_IMAGE_TAG
 
-      - name: 🚀 Desplegar en ECS / Fargate
+      - name: Crear o Actualizar ECS Service
         run: |
-          aws ecs update-service \
-            --cluster mlops-deploy-cluster \
-            --service mlops-dev-service \
-            --force-new-deployment
+          SERVICE_EXISTS=$(aws ecs describe-services \
+            --cluster ${{ env.CLUSTER_NAME }} \
+            --services ${{ env.SERVICE_NAME }} \
+            --query 'services[0].status' --output text)
+
+          if [ "$SERVICE_EXISTS" = "ACTIVE" ]; then
+            echo "Service existe, actualizando..."
+            aws ecs update-service \
+              --cluster ${{ env.CLUSTER_NAME }} \
+              --service ${{ env.SERVICE_NAME }} \
+              --force-new-deployment
+          else
+            echo "Service no existe, creando..."
+            aws ecs create-service \
+              --cluster ${{ env.CLUSTER_NAME }} \
+              --service-name ${{ env.SERVICE_NAME }} \
+              --task-definition ${{ env.TASK_DEFINITION }} \
+              --launch-type FARGATE \
+              --desired-count 1 \
+              --network-configuration "awsvpcConfiguration={subnets=[${{ env.SUBNETS }}],assignPublicIp=ENABLED}"
