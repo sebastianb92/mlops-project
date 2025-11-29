@@ -13,7 +13,8 @@ env:
   IMAGE_TAG: prod-latest
   CLUSTER_NAME: mlops-deploy-cluster
   SERVICE_NAME: mlops-deploy-prod
-  TASK_DEFINITION: mlops-deploy-prod:6
+  TASK_DEFINITION_FILE: ecs-task-def-prod.json
+  CONTAINER_NAME: app
   SUBNETS: subnet-067b18d21d7a147a8
   S3_BUCKET: mlops-project-deploy-bucket
   S3_TEST_PATH: test_data/
@@ -42,9 +43,11 @@ jobs:
           export PYTHONPATH=$PYTHONPATH:$(pwd)
           pytest tests/
 
-  build_promote:
+
+  build_and_deploy:
     needs: test
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -54,32 +57,29 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - run: |
+      - name: Login ECR
+        run: |
           aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
           docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
 
-      - run: |
-          DOCKER_IMAGE_TAG=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
-          docker build . -t $DOCKER_IMAGE_TAG
-          docker push $DOCKER_IMAGE_TAG
+      - name: Build and push Docker image
+        run: |
+          IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
+          docker build -t $IMAGE .
+          docker push $IMAGE
 
-      - run: |
-          SERVICE_EXISTS=$(aws ecs describe-services \
-            --cluster ${{ env.CLUSTER_NAME }} \
-            --services ${{ env.SERVICE_NAME }} \
-            --query 'services[0].status' --output text)
+      - name: Render ECS Task Definition
+        id: render-task
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ env.TASK_DEFINITION_FILE }}
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
 
-          if [ "$SERVICE_EXISTS" = "ACTIVE" ]; then
-            aws ecs update-service \
-              --cluster ${{ env.CLUSTER_NAME }} \
-              --service ${{ env.SERVICE_NAME }} \
-              --force-new-deployment
-          else
-            aws ecs create-service \
-              --cluster ${{ env.CLUSTER_NAME }} \
-              --service-name ${{ env.SERVICE_NAME }} \
-              --task-definition ${{ env.TASK_DEFINITION }} \
-              --launch-type FARGATE \
-              --desired-count 1 \
-              --network-configuration "awsvpcConfiguration={subnets=[${{ env.SUBNETS }}],assignPublicIp=ENABLED}"
-          fi
+      - name: Deploy ECS Task Definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.render-task.outputs.task-definition }}
+          service: ${{ env.SERVICE_NAME }}
+          cluster: ${{ env.CLUSTER_NAME }}
+          wait-for-service-stability: true
