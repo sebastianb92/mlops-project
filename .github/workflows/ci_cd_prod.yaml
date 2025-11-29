@@ -13,14 +13,42 @@ env:
   IMAGE_TAG: prod-latest
   CLUSTER_NAME: mlops-deploy-cluster
   SERVICE_NAME: mlops-deploy-prod
-  TASK_DEFINITION_FILE: ecs-task-def-prod.json
-  CONTAINER_NAME: app
+  S3_BUCKET: mlops-project-deploy-bucket
+  S3_TEST_PATH: test_data/
 
 jobs:
-  build_and_deploy:
+
+  test:
     runs-on: ubuntu-latest
 
     steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - run: pip install -r requirements.txt
+
+      - run: |
+          mkdir -p test_data
+          aws s3 cp s3://${{ env.S3_BUCKET }}/${{ env.S3_TEST_PATH }} test_data/ --recursive
+          export PYTHONPATH=$PYTHONPATH:$(pwd)
+          pytest tests/
+
+
+  build_and_deploy:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+
       - uses: actions/checkout@v4
 
       - uses: aws-actions/configure-aws-credentials@v4
@@ -34,24 +62,15 @@ jobs:
           aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
           docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
 
-      - name: Build and push Docker image
+      - name: Build & Push Image
         run: |
           IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
           docker build -t $IMAGE .
           docker push $IMAGE
 
-      - name: Render ECS Task Definition
-        id: render-task
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
-        with:
-          task-definition: ${{ env.TASK_DEFINITION_FILE }}
-          container-name: ${{ env.CONTAINER_NAME }}
-          image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
-
-      - name: Deploy ECS Task Definition
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-        with:
-          task-definition: ${{ steps.render-task.outputs.task-definition }}
-          service: ${{ env.SERVICE_NAME }}
-          cluster: ${{ env.CLUSTER_NAME }}
-          wait-for-service-stability: true
+      - name: Force new ECS deployment
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.CLUSTER_NAME }} \
+            --service ${{ env.SERVICE_NAME }} \
+            --force-new-deployment
