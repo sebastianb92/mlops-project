@@ -4,56 +4,83 @@ on:
   push:
     branches:
       - prod
-  workflow_dispatch: # Permite disparar el workflow manualmente si es necesario
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: mlops-deploy-repository
+  ECR_REGISTRY: 804923754854.dkr.ecr.us-east-1.amazonaws.com
+  IMAGE_TAG: prod-latest
+  CLUSTER_NAME: mlops-prod-cluster
+  SERVICE_NAME: mlops-prod-service
+  TASK_DEFINITION: mlops-deploy-prod:1
+  SUBNETS: subnet-067b18d21d7a147a8
 
 jobs:
-  # ETAPA 1: TEST - Ejecuta las pruebas unitarias (Sanity Check final)
   test:
     runs-on: ubuntu-latest
     steps:
-    - name: ⬇️ Checkout del Código
-      uses: actions/checkout@v4
+      - name: Checkout del Código
+        uses: actions/checkout@v4
 
-    - name: 🐍 Configurar Python 3.10
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
 
-    - name: 📦 Instalar Dependencias
-      run: pip install -r requirements.txt
-      
-    - name: ⚙️ Preparar Modelo y Datos de Prueba (Simulación)
-      run: echo "Modelo y datos listos para testing."
+      - name: Instalar Dependencias
+        run: pip install -r requirements.txt
 
-    - name: 🧪 Ejecutar Pruebas Unitarias (Pytest)
-      # CORRECCIÓN CLAVE: Esto añade la carpeta actual (donde está 'app/') al PYTHONPATH.
-      run: |
-        export PYTHONPATH=$PYTHONPATH:$(pwd)
-        pytest tests/test_model.py
+      - name: Preparar Modelo y Datos de Prueba
+        run: echo "Simulación de preparación de modelo y datos"
 
-  # ETAPA 2: BUILD & PUSH - Construye la imagen Docker y Simula el Despliegue
+      - name: Ejecutar Pruebas Unitarias
+        run: |
+          export PYTHONPATH=$PYTHONPATH:$(pwd)
+          pytest tests/
+
   build_promote:
-    needs: test # Solo se ejecuta si la etapa 'test' fue exitosa
+    needs: test
     runs-on: ubuntu-latest
     steps:
-    - name: ⬇️ Checkout del Código
-      uses: actions/checkout@v4
+      - name: Checkout del Código
+        uses: actions/checkout@v4
 
-    - name: 🏗️ Construir Imagen Docker
-      # Usamos el SHA del commit para un etiquetado de producción único
-      run: |
-        DOCKER_IMAGE_TAG=mlops-prod:${{ github.sha }}
-        docker build . -t $DOCKER_IMAGE_TAG
-        echo "Imagen Docker construida con éxito: $DOCKER_IMAGE_TAG"
-        
-    - name: 🚀 Simular PUSH a Registro de Contenedores
-      run: |
-        echo "Simulación de push de imagen: mlops-prod:${{ github.sha }}"
+      - name: Configurar Credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-    - name: 🌐 Simular Despliegue FINAL a PROD
-      run: |
-        DOCKER_IMAGE_TAG=mlops-prod:${{ github.sha }}
-        echo "--- DESPLIEGUE FINAL A PRODUCCIÓN INICIADO ---"
-        echo "Actualizando el servicio PROD con la imagen: ${DOCKER_IMAGE_TAG}"
-        echo "El contenedor final usaría el comando: docker run -d -e ENVIRONMENT=prod -p 8080:8080 $DOCKER_IMAGE_TAG"
-        echo "✅ Despliegue a Producción (PROD) completado con éxito."
+      - name: Login a Amazon ECR
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
+          docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+
+      - name: Construir y Push Docker Image
+        run: |
+          DOCKER_IMAGE_TAG=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          docker build . -t $DOCKER_IMAGE_TAG
+          docker push $DOCKER_IMAGE_TAG
+
+      - name: Crear o Actualizar ECS Service
+        run: |
+          SERVICE_EXISTS=$(aws ecs describe-services \
+            --cluster ${{ env.CLUSTER_NAME }} \
+            --services ${{ env.SERVICE_NAME }} \
+            --query 'services[0].status' --output text)
+
+          if [ "$SERVICE_EXISTS" = "ACTIVE" ]; then
+            aws ecs update-service \
+              --cluster ${{ env.CLUSTER_NAME }} \
+              --service ${{ env.SERVICE_NAME }} \
+              --force-new-deployment
+          else
+            aws ecs create-service \
+              --cluster ${{ env.CLUSTER_NAME }} \
+              --service-name ${{ env.SERVICE_NAME }} \
+              --task-definition ${{ env.TASK_DEFINITION }} \
+              --launch-type FARGATE \
+              --desired-count 1 \
+              --network-configuration "awsvpcConfiguration={subnets=[${{ env.SUBNETS }}],assignPublicIp=ENABLED}"
