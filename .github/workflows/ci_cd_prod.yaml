@@ -23,11 +23,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -70,13 +70,11 @@ jobs:
             --query 'services[0].status' --output text)
 
           if [ "$SERVICE_EXISTS" = "ACTIVE" ]; then
-            echo "Service exists — updating deployment..."
             aws ecs update-service \
               --cluster ${{ env.CLUSTER_NAME }} \
               --service ${{ env.SERVICE_NAME }} \
               --force-new-deployment
           else
-            echo "Service does not exist — creating service..."
             aws ecs create-service \
               --cluster ${{ env.CLUSTER_NAME }} \
               --service-name ${{ env.SERVICE_NAME }} \
@@ -84,3 +82,4 @@ jobs:
               --launch-type FARGATE \
               --desired-count 1 \
               --network-configuration "awsvpcConfiguration={subnets=[${{ env.SUBNETS }}],assignPublicIp=ENABLED}"
+          fi
