@@ -45,11 +45,13 @@ jobs:
           docker build . -t $DOCKER_IMAGE_TAG
           docker push $DOCKER_IMAGE_TAG
       - run: |
-          SERVICE_EXISTS=$(aws ecs describe-services \
-            --cluster ${{ env.CLUSTER_NAME }} \
-            --services ${{ env.SERVICE_NAME }} \
-            --query "services[0].status" \
-            --output text)
+          SERVICE_EXISTS=$(
+            aws ecs describe-services \
+              --cluster ${{ env.CLUSTER_NAME }} \
+              --services ${{ env.SERVICE_NAME }} \
+              --query "services[0].status" \
+              --output text
+          )
           echo "SERVICE_EXISTS=$SERVICE_EXISTS"
           if [ "$SERVICE_EXISTS" = "ACTIVE" ]; then
             aws ecs update-service \
