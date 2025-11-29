@@ -1,23 +1,16 @@
-# 1. Imagen base ligera
 FROM python:3.10-slim
-
-# 2. Directorio de trabajo
 WORKDIR /app
 
-# 3. Copiar requirements
+# Copiar dependencias y scripts
 COPY requirements.txt .
-
-# 4. Instalar dependencias + gunicorn
 RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install gunicorn boto3 onnxruntime pillow flask
 
-# 5. Copiar aplicación
+# Copiar app
 COPY app/ app/
 COPY templates/ templates/
 
-# 6. Exponer puerto
-EXPOSE 8080
-
-# 7. Comando para producción usando gunicorn
+# Variables de entorno (para usar dentro del contenedor)
 ENV ENVIRONMENT=dev
-CMD ["gunicorn", "-b", "0.0.0.0:8080", "app:app"]
+
+EXPOSE 8080
+CMD ["python", "app/app.py"]
