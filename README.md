@@ -134,6 +134,17 @@ def test_model_with_image(img_name):
 docker build --no-cache -t $DOCKER_IMAGE_TAG .
 ```
 
+
+## Endpoints
+
+A continuación se listan los endpoints públicos para acceder a la aplicación desplegada en cada entorno:
+
+### Desarrollo (DEV)
+- **URL:** http://13.220.23.40:8080  
+
+### Producción (PROD)
+- **URL:** http://34.201.23.88:8080  
+
 ---
 
 ## Tips
