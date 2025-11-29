@@ -14,6 +14,9 @@ env:
   SERVICE_NAME: mlops-dev-service
   TASK_DEFINITION: mlops-deploy-dev:3
   SUBNETS: subnet-067b18d21d7a147a8
+  S3_BUCKET: mlops-project-deploy-bucket
+  TEST_FOLDER: test_data/
+  MODEL_PATH: models/mobilenetv2-7.onnx
 
 jobs:
   test:
@@ -28,13 +31,53 @@ jobs:
           python-version: '3.10'
 
       - name: Instalar Dependencias
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt boto3 onnxruntime pillow pytest
 
       - name: Ejecutar Pruebas Unitarias
-        # Solo corre tests que existen y no dependen de download_model.py
         run: |
           export PYTHONPATH=$PYTHONPATH:$(pwd)
           pytest tests/
+
+      - name: Test con Imágenes S3
+        run: |
+          python - <<EOF
+import boto3
+import onnxruntime as ort
+import numpy as np
+from PIL import Image
+import io
+import os
+
+BUCKET_NAME = os.environ["S3_BUCKET"]
+TEST_FOLDER = os.environ["TEST_FOLDER"]
+MODEL_PATH = os.environ["MODEL_PATH"]
+
+s3 = boto3.client("s3")
+
+# Descargar modelo
+s3.download_file(BUCKET_NAME, MODEL_PATH, "temp_model.onnx")
+session = ort.InferenceSession("temp_model.onnx")
+
+def preprocess_image(image_bytes):
+    image = Image.open(io.BytesIO(image_bytes)).resize((224,224)).convert("RGB")
+    np_image = np.array(image).astype("float32") / 255.0
+    np_image = np_image.transpose(2,0,1)
+    np_image = np.expand_dims(np_image,0)
+    return np_image
+
+# Listar imágenes
+response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix=TEST_FOLDER)
+test_images = [obj['Key'] for obj in response.get('Contents', []) if obj['Key'].lower().endswith(('.jpg','.png','.jpeg'))]
+
+# Ejecutar pruebas
+for img_name in test_images:
+    obj = s3.get_object(Bucket=BUCKET_NAME, Key=img_name)
+    input_tensor = preprocess_image(obj['Body'].read())
+    outputs = session.run(None, {"input": input_tensor})
+    assert outputs is not None, f"Fallo en {img_name}"
+
+print("Tests S3 completados correctamente")
+EOF
 
   build_promote:
     needs: test
@@ -81,4 +124,3 @@ jobs:
               --launch-type FARGATE \
               --desired-count 1 \
               --network-configuration "awsvpcConfiguration={subnets=[${{ env.SUBNETS }}],assignPublicIp=ENABLED}"
-          fi
