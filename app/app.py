@@ -1,49 +1,71 @@
 import os
 import io
-import json
-import time
 import numpy as np
 from PIL import Image
 from flask import Flask, request, jsonify, render_template
 import onnxruntime
 import boto3
 
-# --- CONFIG S3 ---
+# -------------------------
+# Configuración desde entorno
+# -------------------------
 S3_BUCKET = os.getenv("S3_BUCKET", "mlops-project-bucket")
-S3_KEY = os.getenv("S3_KEY", "models/mobilenetv2-7.onnx")
-MODEL_PATH = "app/mobilenetv2-7.onnx"
+S3_MODEL_KEY = os.getenv("S3_MODEL_PATH", "models/mobilenetv2-7.onnx")
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+ENVIRONMENT = os.getenv("ENVIRONMENT", "dev")
 
-def download_model_from_s3():
-    print("📥 Descargando modelo desde S3...")
-    os.makedirs("app", exist_ok=True)
-    s3 = boto3.client("s3")
+LOCAL_MODEL_DIR = "app"
+MODEL_FILENAME = os.path.basename(S3_MODEL_KEY)
+MODEL_PATH = os.path.join(LOCAL_MODEL_DIR, MODEL_FILENAME)
+LABELS_FILENAME = "imagenet_classes.txt"
+LABELS_PATH = os.path.join(LOCAL_MODEL_DIR, LABELS_FILENAME)
 
+INPUT_SIZE = (224, 224)
+
+# -------------------------
+# Funciones de descarga desde S3
+# -------------------------
+def download_from_s3(bucket: str, key: str, local_path: str):
+    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+    s3 = boto3.client("s3", region_name=AWS_REGION)
     try:
-        s3.download_file(S3_BUCKET, S3_KEY, MODEL_PATH)
-        print(f"✅ Modelo descargado: s3://{S3_BUCKET}/{S3_KEY}")
+        s3.download_file(bucket, key, local_path)
+        print(f"Archivo descargado: s3://{bucket}/{key}")
     except Exception as e:
-        print("❌ Error descargando modelo desde S3:", e)
-        raise e
+        raise RuntimeError(f"Error descargando {key} desde S3: {e}")
 
-# Descargar modelo al iniciar
+# Descargar modelo si no existe
 if not os.path.exists(MODEL_PATH):
-    download_model_from_s3()
+    download_from_s3(S3_BUCKET, S3_MODEL_KEY, MODEL_PATH)
 
-# --- Carga de etiquetas ---
-LABELS_PATH = "imagenet_classes.txt"
-LABELS = []
+# Descargar etiquetas desde S3 si no existen
+S3_LABELS_KEY = os.path.join(os.path.dirname(S3_MODEL_KEY), LABELS_FILENAME)
+if not os.path.exists(LABELS_PATH):
+    download_from_s3(S3_BUCKET, S3_LABELS_KEY, LABELS_PATH)
+
+# -------------------------
+# Cargar etiquetas
+# -------------------------
 try:
     with open(LABELS_PATH, 'r') as f:
-        LABELS = [line.strip() for line in f.readlines()]
-except:
-    print("⚠ No se encontró imagenet_classes.txt")
+        LABELS = [line.strip() for line in f]
+except FileNotFoundError:
+    LABELS = []
+    print("Archivo de etiquetas no encontrado.")
 
-# --- Cargar modelo ONNX ---
-ort_session = onnxruntime.InferenceSession(MODEL_PATH)
-input_name = ort_session.get_inputs()[0].name
+# -------------------------
+# Cargar modelo ONNX
+# -------------------------
+try:
+    ort_session = onnxruntime.InferenceSession(MODEL_PATH)
+    input_name = ort_session.get_inputs()[0].name
+except Exception as e:
+    raise RuntimeError(f"No se pudo cargar el modelo ONNX: {e}")
 
+# -------------------------
+# Flask App
+# -------------------------
 app = Flask(__name__)
-INPUT_SIZE = (224, 224)
 
 def preprocess(img_bytes):
     img = Image.open(io.BytesIO(img_bytes))
@@ -58,17 +80,18 @@ def index():
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    file = request.files["file"]
-    tensor = preprocess(file.read())
-    output = ort_session.run(None, {input_name: tensor})[0]
+    file = request.files.get("file")
+    if file is None:
+        return jsonify({"error": "No se subió ningún archivo"}), 400
 
-    idx = int(np.argmax(output))
-    label = LABELS[idx] if LABELS else "unknown"
-
-    return jsonify({
-        "predicted_label": label,
-        "index": idx
-    })
+    try:
+        tensor = preprocess(file.read())
+        output = ort_session.run(None, {input_name: tensor})[0]
+        idx = int(np.argmax(output))
+        label = LABELS[idx] if LABELS and idx < len(LABELS) else "unknown"
+        return jsonify({"predicted_label": label, "index": idx})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
