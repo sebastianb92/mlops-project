@@ -7,7 +7,7 @@ import pytest
 
 # Configuración de S3
 BUCKET_NAME = "mlops-project-deploy-bucket"
-TEST_FOLDER = "test_data/"  # Carpeta donde están las imágenes
+TEST_FOLDER = "test_data/"
 MODEL_PATH = "models/mobilenetv2-7.onnx"
 
 # Inicializar cliente S3
@@ -27,16 +27,16 @@ def preprocess_image(image_bytes):
     np_image = np.expand_dims(np_image, axis=0)
     return np_image
 
-# Función para listar todas las imágenes en la carpeta de test
+# Listar imágenes en la carpeta de test
 def get_test_images():
     response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix=TEST_FOLDER)
     return [obj['Key'] for obj in response.get('Contents', []) if obj['Key'].lower().endswith(('.jpg', '.png', '.jpeg'))]
 
-# Parametrizar test con pytest
+# Test parametrizado
 @pytest.mark.parametrize("img_name", get_test_images())
 def test_model_with_image(img_name):
     obj = s3.get_object(Bucket=BUCKET_NAME, Key=img_name)
     image_bytes = obj["Body"].read()
     input_tensor = preprocess_image(image_bytes)
-    outputs = session.run(None, {"input": input_tensor})
+    outputs = session.run(None, {"data": input_tensor})  # CORREGIDO: usar "data"
     assert outputs is not None, f"Modelo no devolvió resultados para {img_name}"
