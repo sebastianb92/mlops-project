@@ -9,65 +9,65 @@ env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: mlops-deploy-repository
   ECR_REGISTRY: 804923754854.dkr.ecr.us-east-1.amazonaws.com
+  IMAGE_TAG: dev-latest  # etiqueta para dev
 
 jobs:
   # ETAPA 1: TEST
   test:
     runs-on: ubuntu-latest
     steps:
-    - name: ⬇️ Checkout del Código
-      uses: actions/checkout@v4
+      - name: ⬇️ Checkout del Código
+        uses: actions/checkout@v4
 
-    - name: 🐍 Configurar Python 3.10
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
+      - name: 🐍 Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
 
-    - name: 📦 Instalar Dependencias
-      run: pip install -r requirements.txt
+      - name: 📦 Instalar Dependencias
+        run: pip install -r requirements.txt
 
-    - name: ⚙️ Preparar Modelo y Datos de Prueba
-      run: |
-        # Descarga el modelo desde S3 o bucket definido
-        python app/download_model.py
-        echo "Modelo y datos listos para testing."
+      - name: ⚙️ Preparar Modelo y Datos de Prueba
+        run: |
+          # Descarga el modelo desde S3 o bucket definido
+          python app/download_model.py
+          echo "Modelo y datos listos para testing."
 
-    - name: 🧪 Ejecutar Pruebas Unitarias
-      run: |
-        export PYTHONPATH=$PYTHONPATH:$(pwd)
-        pytest tests/test_model.py
+      - name: 🧪 Ejecutar Pruebas Unitarias
+        run: |
+          export PYTHONPATH=$PYTHONPATH:$(pwd)
+          pytest tests/test_model.py
 
   # ETAPA 2: BUILD / PROMOTE
   build_promote:
     needs: test
     runs-on: ubuntu-latest
     steps:
-    - name: ⬇️ Checkout del Código
-      uses: actions/checkout@v4
+      - name: ⬇️ Checkout del Código
+        uses: actions/checkout@v4
 
-    - name: 🔑 Configurar Credenciales AWS
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
+      - name: 🔑 Configurar Credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-    - name: 🐳 Login a Amazon ECR
-      uses: aws-actions/amazon-ecr-login@v1
+      - name: 🐳 Login a Amazon ECR
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
+          docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
 
-    - name: 🏗️ Construir Imagen Docker
-      run: |
-        DOCKER_IMAGE_TAG=$ECR_REGISTRY/$ECR_REPOSITORY:dev-latest
-        docker build . -t $DOCKER_IMAGE_TAG
-        echo "Imagen Docker construida: $DOCKER_IMAGE_TAG"
+      - name: 🏗️ Construir y Push Docker Image
+        run: |
+          DOCKER_IMAGE_TAG=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          echo "Imagen Docker completa: $DOCKER_IMAGE_TAG"
+          docker build . -t $DOCKER_IMAGE_TAG
+          docker push $DOCKER_IMAGE_TAG
 
-    - name: 📤 Push Docker Image a ECR
-      run: docker push $DOCKER_IMAGE_TAG
-
-    - name: 🚀 Desplegar en ECS / Fargate
-      run: |
-        # Aquí puedes usar AWS CLI para actualizar el Service existente
-        aws ecs update-service \
-          --cluster mlops-deploy-cluster \
-          --service mlops-dev-service \
-          --force-new-deployment
+      - name: 🚀 Desplegar en ECS / Fargate
+        run: |
+          aws ecs update-service \
+            --cluster mlops-deploy-cluster \
+            --service mlops-dev-service \
+            --force-new-deployment
