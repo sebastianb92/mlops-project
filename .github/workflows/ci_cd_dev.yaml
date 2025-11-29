@@ -5,8 +5,13 @@ on:
     branches:
       - dev
 
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: mlops-deploy-repository
+  ECR_REGISTRY: 804923754854.dkr.ecr.us-east-1.amazonaws.com
+
 jobs:
-  # ETAPA 1: TEST - Ejecuta las pruebas unitarias
+  # ETAPA 1: TEST
   test:
     runs-on: ubuntu-latest
     steps:
@@ -20,38 +25,49 @@ jobs:
 
     - name: 📦 Instalar Dependencias
       run: pip install -r requirements.txt
-      
-    - name: ⚙️ Preparar Modelo y Datos de Prueba (Simulación)
+
+    - name: ⚙️ Preparar Modelo y Datos de Prueba
       run: |
-        # Asumiendo que mobilenetv2-7.onnx está disponible en el runner
+        # Descarga el modelo desde S3 o bucket definido
+        python app/download_model.py
         echo "Modelo y datos listos para testing."
 
-    - name: 🧪 Ejecutar Pruebas Unitarias (Pytest)
-      # CORRECCIÓN DEFINITIVA: Esto soluciona el error de shell (run: .)
-      # y el error de importación (ModuleNotFoundError)
+    - name: 🧪 Ejecutar Pruebas Unitarias
       run: |
-        # Añade el directorio actual al path de Python para que pueda encontrar el módulo 'app'
         export PYTHONPATH=$PYTHONPATH:$(pwd)
         pytest tests/test_model.py
 
-  # ETAPA 2: BUILD/PROMOTE - Construye la imagen Docker
+  # ETAPA 2: BUILD / PROMOTE
   build_promote:
-    needs: test # Solo se ejecuta si la etapa 'test' fue exitosa
+    needs: test
     runs-on: ubuntu-latest
     steps:
     - name: ⬇️ Checkout del Código
       uses: actions/checkout@v4
 
+    - name: 🔑 Configurar Credenciales AWS
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: 🐳 Login a Amazon ECR
+      uses: aws-actions/amazon-ecr-login@v1
+
     - name: 🏗️ Construir Imagen Docker
-      # Nota: La construcción de la imagen DEBE ejecutar app/download_model.py
-      # para obtener el modelo del "bucket" (simulación) y meterlo en la imagen.
       run: |
-        # Usamos una etiqueta simple para la rama dev (ej: latest-dev)
-        DOCKER_IMAGE_TAG=mlops-dev:latest
+        DOCKER_IMAGE_TAG=$ECR_REGISTRY/$ECR_REPOSITORY:dev-latest
         docker build . -t $DOCKER_IMAGE_TAG
-        echo "Imagen Docker construida con éxito: $DOCKER_IMAGE_TAG"
-        
-    - name: 🚀 Simular Despliegue (Simulación de Actualización de Endpoint)
+        echo "Imagen Docker construida: $DOCKER_IMAGE_TAG"
+
+    - name: 📤 Push Docker Image a ECR
+      run: docker push $DOCKER_IMAGE_TAG
+
+    - name: 🚀 Desplegar en ECS / Fargate
       run: |
-        echo "Simulación de despliegue en el endpoint DEV completada."
-        echo "El contenedor final usaría el comando: docker run -d -e ENVIRONMENT=dev -p 8080:8080 $DOCKER_IMAGE_TAG"
+        # Aquí puedes usar AWS CLI para actualizar el Service existente
+        aws ecs update-service \
+          --cluster mlops-deploy-cluster \
+          --service mlops-dev-service \
+          --force-new-deployment
