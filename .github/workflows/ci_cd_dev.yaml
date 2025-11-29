@@ -51,7 +51,8 @@ jobs:
 
       - name: Login a Amazon ECR
         run: |
-          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
+          docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
 
       - name: Construir y Push Docker Image
         run: |
@@ -61,15 +62,16 @@ jobs:
 
       - name: Crear o Actualizar ECS Service
         run: |
-          SERVICE_EXISTS=$(
-            aws ecs describe-services \
-              --cluster ${{ env.CLUSTER_NAME }} \
-              --services ${{ env.SERVICE_NAME }} \
-              --query "services[0].status" \
-              --output text
-          )
+          # Obtener el estado del servicio
+          SERVICE_EXISTS=$(aws ecs describe-services \
+            --cluster ${{ env.CLUSTER_NAME }} \
+            --services ${{ env.SERVICE_NAME }} \
+            --query "services[0].status" \
+            --output text)
+
           echo "SERVICE_EXISTS=$SERVICE_EXISTS"
 
+          # Actualizar o crear el servicio
           if [ "$SERVICE_EXISTS" = "ACTIVE" ]; then
             aws ecs update-service \
               --cluster ${{ env.CLUSTER_NAME }} \
