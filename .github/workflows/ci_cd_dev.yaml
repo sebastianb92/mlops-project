@@ -19,12 +19,19 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout del Código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - run: pip install -r requirements.txt
-      - run: |
+
+      - name: Instalar Dependencias
+        run: pip install -r requirements.txt
+
+      - name: Ejecutar Pruebas Unitarias
+        run: |
           export PYTHONPATH=$PYTHONPATH:$(pwd)
           pytest tests/
 
@@ -32,19 +39,28 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Checkout del Código
+        uses: actions/checkout@v4
+
+      - name: Configurar Credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-      - run: |
+
+      - name: Login a Amazon ECR
+        run: |
           aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
-      - run: |
+
+      - name: Construir y Push Docker Image
+        run: |
           DOCKER_IMAGE_TAG=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
           docker build . -t $DOCKER_IMAGE_TAG
           docker push $DOCKER_IMAGE_TAG
-      - run: |
+
+      - name: Crear o Actualizar ECS Service
+        run: |
           SERVICE_EXISTS=$(
             aws ecs describe-services \
               --cluster ${{ env.CLUSTER_NAME }} \
@@ -53,6 +69,7 @@ jobs:
               --output text
           )
           echo "SERVICE_EXISTS=$SERVICE_EXISTS"
+
           if [ "$SERVICE_EXISTS" = "ACTIVE" ]; then
             aws ecs update-service \
               --cluster ${{ env.CLUSTER_NAME }} \
