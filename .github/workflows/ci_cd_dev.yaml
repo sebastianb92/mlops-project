@@ -12,27 +12,28 @@ env:
   IMAGE_TAG: dev-latest
   CLUSTER_NAME: mlops-deploy-cluster
   SERVICE_NAME: mlops-dev-service
-  TASK_DEFINITION: mlops-deploy-dev:3
+  TASK_DEFINITION: mlops-deploy-dev:4
   SUBNETS: subnet-067b18d21d7a147a8
+  S3_BUCKET: mlops-project-deploy-bucket
+  S3_TEST_PATH: test_data/
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout del Código
-        uses: actions/checkout@v4
-
-      - name: Configurar Python 3.10
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-
-      - name: Instalar Dependencias
-        run: pip install -r requirements.txt
-
-      - name: Ejecutar Pruebas Unitarias
-        # Solo corre tests que existen y no dependen de download_model.py
-        run: |
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - run: pip install -r requirements.txt
+      - run: |
+          mkdir -p test_data
+          aws s3 cp s3://${{ env.S3_BUCKET }}/${{ env.S3_TEST_PATH }} test_data/ --recursive
           export PYTHONPATH=$PYTHONPATH:$(pwd)
           pytest tests/
 
@@ -40,34 +41,24 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout del Código
-        uses: actions/checkout@v4
-
-      - name: Configurar Credenciales AWS
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login a Amazon ECR
-        run: |
+      - run: |
           aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
           docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
-
-      - name: Construir y Push Docker Image
-        run: |
+      - run: |
           DOCKER_IMAGE_TAG=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
           docker build . -t $DOCKER_IMAGE_TAG
           docker push $DOCKER_IMAGE_TAG
-
-      - name: Crear o Actualizar ECS Service
-        run: |
+      - run: |
           SERVICE_EXISTS=$(aws ecs describe-services \
             --cluster ${{ env.CLUSTER_NAME }} \
             --services ${{ env.SERVICE_NAME }} \
             --query 'services[0].status' --output text)
-
           if [ "$SERVICE_EXISTS" = "ACTIVE" ]; then
             aws ecs update-service \
               --cluster ${{ env.CLUSTER_NAME }} \

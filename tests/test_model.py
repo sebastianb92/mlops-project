@@ -1,27 +1,42 @@
+import boto3
+import onnxruntime as ort
+import numpy as np
+from PIL import Image
+import io
 import pytest
-import os
-import json
 
-# Solo probamos que el archivo de datos de test existe y se puede leer
-TEST_DATA_PATH = "tests/test_data.json"
+# Configuración de S3
+BUCKET_NAME = "mlops-project-deploy-bucket"
+TEST_FOLDER = "test_data/"
+MODEL_PATH = "models/mobilenetv2-7.onnx"
 
-@pytest.fixture(scope="session", autouse=True)
-def ensure_test_data():
-    """Asegura que el archivo de test exista para no fallar la pipeline."""
-    os.makedirs(os.path.dirname(TEST_DATA_PATH), exist_ok=True)
-    if not os.path.exists(TEST_DATA_PATH):
-        dummy_data = {
-            "input_tensor": [[ [0,0,0] for _ in range(224)] for _ in range(224)],
-            "expected_index": 0,
-            "baseline_confidence": 0.85
-        }
-        with open(TEST_DATA_PATH, "w") as f:
-            json.dump(dummy_data, f)
+# Inicializar cliente S3
+s3 = boto3.client("s3")
 
-def test_test_data_exists():
-    """Verifica que los datos de prueba existan y sean legibles."""
-    with open(TEST_DATA_PATH, "r") as f:
-        data = json.load(f)
-    assert "input_tensor" in data
-    assert "expected_index" in data
-    assert "baseline_confidence" in data
+# Descargar modelo desde S3
+s3.download_file(BUCKET_NAME, MODEL_PATH, "temp_model.onnx")
+
+# Inicializar ONNX Runtime
+session = ort.InferenceSession("temp_model.onnx")
+
+# Función para preprocesar imagen
+def preprocess_image(image_bytes):
+    image = Image.open(io.BytesIO(image_bytes)).resize((224, 224)).convert("RGB")
+    np_image = np.array(image).astype("float32") / 255.0
+    np_image = np_image.transpose(2, 0, 1)  # channels first
+    np_image = np.expand_dims(np_image, axis=0)
+    return np_image
+
+# Listar imágenes en la carpeta de test
+def get_test_images():
+    response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix=TEST_FOLDER)
+    return [obj['Key'] for obj in response.get('Contents', []) if obj['Key'].lower().endswith(('.jpg', '.png', '.jpeg'))]
+
+# Test parametrizado
+@pytest.mark.parametrize("img_name", get_test_images())
+def test_model_with_image(img_name):
+    obj = s3.get_object(Bucket=BUCKET_NAME, Key=img_name)
+    image_bytes = obj["Body"].read()
+    input_tensor = preprocess_image(image_bytes)
+    outputs = session.run(None, {"data": input_tensor})  # CORREGIDO: usar "data"
+    assert outputs is not None, f"Modelo no devolvió resultados para {img_name}"
