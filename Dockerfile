@@ -1,16 +1,20 @@
 FROM python:3.10-slim
+
+# Install dependencies needed for Pillow + ONNX Runtime
+RUN apt-get update && apt-get install -y \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# Copiar dependencias y scripts
-COPY requirements.txt .
+# Copy application
+COPY app/ /app/app/
+COPY templates/ /app/templates/
+COPY requirements.txt /app/
+
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar app
-COPY app/ app/
-COPY templates/ templates/
-
-# Variables de entorno (para usar dentro del contenedor)
-ENV ENVIRONMENT=dev
-
 EXPOSE 8080
+
 CMD ["python", "app/app.py"]
