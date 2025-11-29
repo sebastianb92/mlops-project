@@ -13,7 +13,7 @@ env:
   IMAGE_TAG: prod-latest
   CLUSTER_NAME: mlops-deploy-cluster  # puede ser el mismo cluster de dev
   SERVICE_NAME: mlops-prod-service
-  TASK_DEFINITION: mlops-deploy-prod:1
+  TASK_DEFINITION: mlops-deploy-prod:4
   SUBNETS: subnet-067b18d21d7a147a8
 
 jobs:
