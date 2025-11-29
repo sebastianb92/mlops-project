@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - dev
-  workflow_dispatch:
 
 env:
   AWS_REGION: us-east-1
@@ -31,10 +30,8 @@ jobs:
       - name: Instalar Dependencias
         run: pip install -r requirements.txt
 
-      - name: Preparar Modelo y Datos de Prueba
-        run: echo "Simulación de preparación de modelo y datos"
-
       - name: Ejecutar Pruebas Unitarias
+        # Solo corre tests que existen y no dependen de download_model.py
         run: |
           export PYTHONPATH=$PYTHONPATH:$(pwd)
           pytest tests/
@@ -81,6 +78,7 @@ jobs:
               --cluster ${{ env.CLUSTER_NAME }} \
               --service-name ${{ env.SERVICE_NAME }} \
               --task-definition ${{ env.TASK_DEFINITION }} \
-              --launch-type EC2 \
+              --launch-type FARGATE \
               --desired-count 1 \
               --network-configuration "awsvpcConfiguration={subnets=[${{ env.SUBNETS }}],assignPublicIp=ENABLED}"
+          fi
