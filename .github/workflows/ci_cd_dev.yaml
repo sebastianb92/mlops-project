@@ -12,7 +12,7 @@ env:
   IMAGE_TAG: dev-latest
   CLUSTER_NAME: mlops-deploy-cluster
   SERVICE_NAME: mlops-deploy-dev
-  TASK_DEFINITION: mlops-deploy-dev:4
+  TASK_DEFINITION: mlops-deploy-dev:5
   SUBNETS: subnet-067b18d21d7a147a8
   S3_BUCKET: mlops-project-deploy-bucket
   S3_TEST_PATH: test_data/
