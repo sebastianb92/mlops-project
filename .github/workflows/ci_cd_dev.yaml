@@ -30,13 +30,11 @@ jobs:
       - name: Instalar Dependencias
         run: pip install -r requirements.txt
 
-      - name: Preparar Modelo y Datos de Prueba (Simulación)
-        run: echo "Simulando preparación del modelo y datos de prueba..."
-
       - name: Ejecutar Pruebas Unitarias
+        # Solo corre tests que existen y no dependen de download_model.py
         run: |
           export PYTHONPATH=$PYTHONPATH:$(pwd)
-          pytest tests/test_model.py
+          pytest tests/
 
   build_promote:
     needs: test
@@ -60,7 +58,6 @@ jobs:
       - name: Construir y Push Docker Image
         run: |
           DOCKER_IMAGE_TAG=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
-          echo "Imagen Docker completa: $DOCKER_IMAGE_TAG"
           docker build . -t $DOCKER_IMAGE_TAG
           docker push $DOCKER_IMAGE_TAG
 
@@ -72,13 +69,11 @@ jobs:
             --query 'services[0].status' --output text)
 
           if [ "$SERVICE_EXISTS" = "ACTIVE" ]; then
-            echo "Service existe, actualizando..."
             aws ecs update-service \
               --cluster ${{ env.CLUSTER_NAME }} \
               --service ${{ env.SERVICE_NAME }} \
               --force-new-deployment
           else
-            echo "Service no existe, creando..."
             aws ecs create-service \
               --cluster ${{ env.CLUSTER_NAME }} \
               --service-name ${{ env.SERVICE_NAME }} \
