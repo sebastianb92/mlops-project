@@ -31,9 +31,6 @@ jobs:
       - name: Instalar Dependencias
         run: pip install -r requirements.txt
 
-      - name: Preparar Modelo y Datos de Prueba
-        run: echo "Simulación de preparación de modelo y datos"
-
       - name: Ejecutar Pruebas Unitarias
         run: |
           export PYTHONPATH=$PYTHONPATH:$(pwd)
@@ -84,3 +81,4 @@ jobs:
               --launch-type FARGATE \
               --desired-count 1 \
               --network-configuration "awsvpcConfiguration={subnets=[${{ env.SUBNETS }}],assignPublicIp=ENABLED}"
+          fi
