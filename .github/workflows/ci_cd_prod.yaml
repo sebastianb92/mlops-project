@@ -11,7 +11,7 @@ env:
   ECR_REPOSITORY: mlops-deploy-repository
   ECR_REGISTRY: 804923754854.dkr.ecr.us-east-1.amazonaws.com
   IMAGE_TAG: prod-latest
-  CLUSTER_NAME: mlops-prod-cluster
+  CLUSTER_NAME: mlops-deploy-cluster  # puede ser el mismo cluster de dev
   SERVICE_NAME: mlops-prod-service
   TASK_DEFINITION: mlops-deploy-prod:1
   SUBNETS: subnet-067b18d21d7a147a8
