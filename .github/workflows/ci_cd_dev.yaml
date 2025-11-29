@@ -11,7 +11,7 @@ env:
   ECR_REGISTRY: 804923754854.dkr.ecr.us-east-1.amazonaws.com
   IMAGE_TAG: dev-latest
   CLUSTER_NAME: mlops-deploy-cluster
-  SERVICE_NAME: mlops-dev-service
+  SERVICE_NAME: mlops-deploy-dev
   TASK_DEFINITION: mlops-deploy-dev:4
   SUBNETS: subnet-067b18d21d7a147a8
   S3_BUCKET: mlops-project-deploy-bucket
