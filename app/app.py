@@ -5,23 +5,27 @@ from PIL import Image
 from flask import Flask, request, jsonify, render_template
 import onnxruntime
 import boto3
+from datetime import datetime
 
 # Config variables
 S3_BUCKET = os.getenv("S3_BUCKET")
 S3_MODEL_PATH = os.getenv("S3_MODEL_PATH")
 S3_LABELS_PATH = os.getenv("S3_LABELS_PATH")
-S3_PREDICTIONS_PATH = os.getenv("S3_PREDICTIONS_PATH", "predictions/preds.txt")
+ENVIRONMENT = os.getenv("ENVIRONMENT", "dev")  # "dev" o "prod"
+
+# Selección del archivo de predicciones según entorno
+S3_PREDICTIONS_PATH = os.getenv(
+    "S3_PREDICTIONS_DEV" if ENVIRONMENT == "dev" else "S3_PREDICTIONS_PROD"
+)
 
 MODEL_LOCAL_PATH = "app/mobilenetv2-7.onnx"
 LABELS_LOCAL_PATH = "app/imagenet_classes.txt"
-
 
 def safe_download(s3_path, local_path):
     """Download a file from S3 only if the path exists."""
     if not s3_path:
         print(f"[WARN] No S3 path provided for {local_path}, skipping download.")
         return
-
     try:
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
         s3 = boto3.client("s3")
@@ -29,7 +33,6 @@ def safe_download(s3_path, local_path):
         s3.download_file(S3_BUCKET, s3_path, local_path)
     except Exception as e:
         print(f"[ERROR] Could not download {s3_path}: {e}")
-
 
 # Ensure model + labels exist
 if not os.path.exists(MODEL_LOCAL_PATH):
@@ -54,13 +57,11 @@ input_name = ort_session.get_inputs()[0].name
 app = Flask(__name__)
 INPUT_SIZE = (224, 224)
 
-
 def preprocess(img_bytes):
     img = Image.open(io.BytesIO(img_bytes)).convert("RGB").resize(INPUT_SIZE)
     data = np.asarray(img, dtype=np.float32) / 255.0
     data = data.transpose([2, 0, 1])
     return np.expand_dims(data, axis=0)
-
 
 def save_prediction_to_s3(pred_str):
     """Append predictions to a file in S3."""
@@ -81,11 +82,9 @@ def save_prediction_to_s3(pred_str):
     except Exception as e:
         print(f"[ERROR] Could not save prediction to S3: {e}")
 
-
 @app.route("/")
 def index():
     return render_template("index.html")
-
 
 @app.route("/predict", methods=["POST"])
 def predict():
@@ -96,10 +95,12 @@ def predict():
     idx = int(np.argmax(output))
     label = LABELS[idx] if idx < len(LABELS) else "unknown"
 
-    save_prediction_to_s3(f"{label},{idx}")
+    # Guardar predicción con timestamp
+    ts = datetime.utcnow().isoformat()
+    pred_str = f"{ts},{label},{idx}"
+    save_prediction_to_s3(pred_str)
 
     return jsonify({"predicted_label": label, "index": idx})
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
