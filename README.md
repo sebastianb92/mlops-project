@@ -113,7 +113,7 @@ S3_TEST_PATH: test_data/
 A continuación se listan los endpoints públicos para acceder a la aplicación desplegada en cada entorno:
 
 ### Desarrollo (DEV)
-- **URL:** http://3.239.192.84:8080
+- **URL:** http://18.232.166.107:8080
 
 ### Producción (PROD)
 - **URL:** http://54.224.151.170:8080
