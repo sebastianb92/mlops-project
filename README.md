@@ -13,19 +13,24 @@ Incluye pruebas unitarias automáticas con **pytest** y pruebas de inferencia co
 ```
 mlops-project/
 ├── .github/
-│ └── workflows/
-│ ├── ci_cd_dev.yaml # Pipeline para el entorno de desarrollo
-│ └── ci_cd_prod.yaml # Pipeline para el entorno de producción
-├── app/
-│ └── app.py # Script principal de la aplicación
-├── templates/
-│ └── index.html # Plantilla HTML usada por la aplicación
+│   └── workflows/
+│       ├── ci_cd_dev.yaml
+│       └── ci_cd_prod.yaml
+│
+├── app/                      # Carpeta principal del backend
+│   ├── app.py                # Script principal Flask
+│   ├── model/                # (Opcional) Carpeta para modelo descargado
+│   └── templates/            # Plantillas renderizadas por Flask
+│       └── index.html
+│
 ├── tests/
-│ └── test_model.py # Pruebas unitarias y de integración
+│   └── test_model.py         # Pruebas unitarias
+│
 ├── .gitignore
 ├── Dockerfile
 ├── README.md
 └── requirements.txt
+
 ```
 
 ---
@@ -42,8 +47,7 @@ mlops-project/
   * Imágenes de prueba: `test_data/`
 * AWS ECS:
 
-  * Cluster dev: `mlops-deploy-cluster`
-  * Cluster prod: `mlops-prod-cluster` o mismo cluster dev
+  * Cluster  `mlops-deploy-cluster`
   * Servicios dev/prod: `mlops-deploy-dev` / `mlops-deploy-prod`
 
 ---
@@ -65,7 +69,7 @@ ECR_REGISTRY: 804923754854.dkr.ecr.us-east-1.amazonaws.com
 IMAGE_TAG: dev-latest
 CLUSTER_NAME: mlops-deploy-cluster
 SERVICE_NAME: mlops-dev-service
-TASK_DEFINITION: mlops-deploy-dev:4
+TASK_DEFINITION: mlops-deploy-dev
 SUBNETS: subnet-067b18d21d7a147a8
 S3_BUCKET: mlops-project-deploy-bucket
 S3_TEST_PATH: test_data/
@@ -76,28 +80,7 @@ S3_TEST_PATH: test_data/
 * Se ejecuta con push a la rama `prod` o manual (`workflow_dispatch`).
 * Igual que dev pero con tag `prod-latest` y servicio `mlops-prod-service`.
 
----
 
-## Dockerfile
-
-```dockerfile
-FROM python:3.10-slim
-WORKDIR /app
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY app/ app/
-COPY templates/ templates/
-
-ENV ENVIRONMENT=dev
-EXPOSE 8080
-CMD ["python", "app/app.py"]
-```
-
-* `templates/` usada es la de la raíz del proyecto.
-* `app/app.py` es el entrypoint principal.
-* Cambiar `ENVIRONMENT` según dev o prod.
 
 ---
 
@@ -107,14 +90,7 @@ CMD ["python", "app/app.py"]
 * Se ejecuta `pytest tests/` para validar que el modelo produce inferencias correctamente.
 * Test de ejemplo (`tests/test_model.py`):
 
-```python
-def test_model_with_image(img_name):
-    obj = s3.get_object(Bucket=BUCKET_NAME, Key=img_name)
-    image_bytes = obj["Body"].read()
-    input_tensor = preprocess_image(image_bytes)
-    outputs = session.run(None, {"data": input_tensor})  # data es el input del ONNX
-    assert outputs is not None
-```
+
 
 ---
 
@@ -128,11 +104,8 @@ def test_model_with_image(img_name):
    * Construye imagen Docker
    * Publica a ECR
    * Actualiza ECS Service (o crea si no existe)
-4. Para asegurar que siempre se usen cambios recientes en el index, Docker build se hace sin cache:
 
-```bash
-docker build --no-cache -t $DOCKER_IMAGE_TAG .
-```
+
 
 
 ## Endpoints
@@ -140,20 +113,14 @@ docker build --no-cache -t $DOCKER_IMAGE_TAG .
 A continuación se listan los endpoints públicos para acceder a la aplicación desplegada en cada entorno:
 
 ### Desarrollo (DEV)
-- **URL:** http://13.220.23.40:8080  
+- **URL:** http://3.239.192.84:8080
 
 ### Producción (PROD)
-- **URL:** http://34.201.23.88:8080  
+- **URL:** http://54.224.151.170:8080
 
 ---
 
-## Tips
 
-* Para ver qué `index` está usando la app, revisar `CMD` en Dockerfile y las rutas de templates.
-* El `task_definition` se puede fijar en el workflow o usar la última versión publicada.
-* Si se borran imágenes antiguas, GitHub Actions recrea la imagen automáticamente al hacer push.
-
----
 
 ## Contacto
 
