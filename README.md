@@ -121,7 +121,7 @@ Características de la aplicación:
   
 *	**Endpoints de la API:** La aplicación expone uno o varios endpoints HTTP. El principal es normalmente un endpoint de predicción (por ejemplo, POST /predict) al que un cliente puede enviarle datos de entrada (ej. un JSON con las características requeridas por el modelo) y obtener como respuesta la predicción generada. También suele haber endpoints auxiliares, como un endpoint de health check (GET /health o /) que simplemente devuelve un mensaje de estado ("OK") para indicar que el servicio está en pie. FastAPI automáticamente genera una documentación interactiva (en /docs) donde se pueden explorar y probar los endpoints, lo cual es útil durante desarrollo.
   
-*	**Entornos Dev y Prod (Endpoints separados):** Gracias a la estrategia de ramas y despliegue, existen dos instancias de esta aplicación corriendo: una asociada a la rama dev (entorno de desarrollo) y otra asociada a la rama prod (entorno de producción). En la práctica, esto podría traducirse en dos URLs o endpoints desplegados, por ejemplo:http://3.234.183.85:8080/ para desarrollo y http://3.235.92.139:8080/ para producción. La versión de dev se actualiza con cada push a la rama de desarrollo (posiblemente desplegada en un ECS de staging o una instancia separada) y permite probar nuevas funcionalidades del modelo o código en un entorno controlado. La versión prod es la que consume el usuario final o la aplicación cliente real, y sólo se actualiza cuando las nuevas características han pasado las pruebas. Esta separación garantiza que lo que esté en producción esté siempre estable, mientras que el equipo puede iterar rápidamente en dev.
+*	**Entornos Dev y Prod (Endpoints separados):** Gracias a la estrategia de ramas y despliegue, existen dos instancias de esta aplicación corriendo: una asociada a la rama dev (entorno de desarrollo) y otra asociada a la rama prod (entorno de producción). En la práctica, esto podría traducirse en dos URLs o endpoints desplegados, por ejemplo: http://98.80.182.126:8080/ para desarrollo y http://35.175.238.110:8080/ para producción. La versión de dev se actualiza con cada push a la rama de desarrollo (posiblemente desplegada en un ECS de staging o una instancia separada) y permite probar nuevas funcionalidades del modelo o código en un entorno controlado. La versión prod es la que consume el usuario final o la aplicación cliente real, y sólo se actualiza cuando las nuevas características han pasado las pruebas. Esta separación garantiza que lo que esté en producción esté siempre estable, mientras que el equipo puede iterar rápidamente en dev.
   
 *	**Almacenamiento de Predicciones en S3:** Un requerimiento específico de este proyecto es que cada predicción realizada por la API se guarda como un archivo .txt en el bucket S3. Tanto la instancia dev como la prod realizan este guardado de resultados, aunque pueden organizarse en diferentes ubicaciones dentro del bucket para no interferir. Por ejemplo, el endpoint de dev podría escribir los archivos de resultado en una ruta s3://<bucket>/predicciones/dev/, mientras que el de prod lo hace en s3://<bucket>/predicciones/prod/. El contenido de cada archivo de predicción típicamente incluye alguna identificación de la solicitud (p.ej., un timestamp o ID único) y el resultado devuelto por el modelo para esa solicitud. De esta manera, si un usuario envía datos para predicción, el servicio devuelve la respuesta inmediatamente vía API y adicionalmente registra asíncronamente ese resultado en un archivo de texto en el bucket.
   
@@ -138,10 +138,10 @@ Características de la aplicación:
 A continuación se listan los endpoints públicos para acceder a la aplicación desplegada en cada entorno:
 
 ### Desarrollo (DEV)
-- **URL:** http://3.234.183.85:8080/
+- **URL:** http://98.80.182.126:8080/
 
 ### Producción (PROD)
-- **URL:** http://3.235.92.139:8080/
+- **URL:** http://35.175.238.110:8080/
 
 
 
